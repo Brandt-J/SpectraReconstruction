@@ -1,1 +1,1 @@
-SpectraReconstruction
+SpecReconstruction

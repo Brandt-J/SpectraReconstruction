@@ -1,0 +1,7 @@
+The ATR Reference Spectra were obtained with permission from simple-plastics.eu/download.html.
+
+The reference databases were first described in 
+Primpke, S.; Wirth, M; Lorenz, C.; Gerdts, G., 
+"Reference database design for the automated analysis of microplastic samples based on 
+Fourier transform infrared (FTIR) spectroscopy." Anal. Bioanal. Chem. 2018, 410, 5131–5141.
+
