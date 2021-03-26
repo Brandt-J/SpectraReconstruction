@@ -19,10 +19,10 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 
-import numpy as np
-from scipy.signal import gaussian
 import matplotlib.pyplot as plt
 import numba
+import numpy as np
+from scipy.signal import gaussian
 
 
 @numba.njit()

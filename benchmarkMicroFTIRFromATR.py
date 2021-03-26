@@ -1,14 +1,13 @@
-import numpy as np
 import time
 
-from functions import reduceSpecsToNWavenumbers
-import distort
+import numpy as np
+
 import importData as io
 import outGraphs as out
-from Reconstruction import prepareSpecSet, Reconstructor
+from Reconstruction import prepareSpecSet, getReconstructor
+from functions import reduceSpecsToNWavenumbers
+from globals import SPECLENGTH
 
-
-specLength, latentDims = 512, 128
 noiseLevel = 0.15
 t0 = time.time()
 numTrainSpectra, numTestSpectra = 90, 20
@@ -22,7 +21,7 @@ print(experimentTitle)
 
 specNames, spectra = io.load_specCSVs_from_directory("ATR Spectra", maxSpectra=numTrainSpectra+numTestSpectra)
 wavenums = spectra[:, 0].copy()
-spectra = reduceSpecsToNWavenumbers(spectra, specLength)
+spectra = reduceSpecsToNWavenumbers(spectra, SPECLENGTH)
 print(f'loading and remapping spectra took {round(time.time()-t0)} seconds')
 
 specs: np.ndarray = spectra[:, 1:]
@@ -52,15 +51,14 @@ testSpectra = prepareSpecSet(testSpectra)
 noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra)
 noisyTestSpectra = prepareSpecSet(noisyTestSpectra)
 
-rec = Reconstructor(specLength=specLength, latentDims=latentDims)
-rec.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+rec = getReconstructor()
 history = rec.fit(noisyTrainSpectra, trainSpectra,
                   epochs=10, validation_data=(noisyTestSpectra, testSpectra),
                   batch_size=32, shuffle=True)
 histplot = out.getHistPlot(history.history, title=experimentTitle)
 
 
-noisySpecs, cleanSpecs, specNames, soilSpecs, wavenumbers = io.load_microFTIR_spectra(specLength)
+noisySpecs, cleanSpecs, specNames, soilSpecs, wavenumbers = io.load_microFTIR_spectra(SPECLENGTH)
 noisySpecs = prepareSpecSet(noisySpecs, transpose=False)
 cleanSpecs = prepareSpecSet(cleanSpecs, transpose=False)
 

@@ -19,7 +19,6 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 import os
 import numpy as np
-from imblearn import over_sampling, under_sampling
 from typing import List, Tuple
 
 from functions import getNMostDifferentSpectra, reduceSpecsToNWavenumbers, remapSpectrumToWavenumbers, remapSpecArrayToWavenumbers

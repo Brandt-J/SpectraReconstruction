@@ -1,17 +1,17 @@
-import numpy as np
+import random
 import time
 from typing import List
-import random
-from tensorflow.keras.models import load_model
+
+import numpy as np
 
 import importData as io
 import outGraphs as out
-from Reconstruction import prepareSpecSet, Reconstructor
+from Reconstruction import prepareSpecSet, getReconstructor
+from globals import SPECLENGTH
 
-specLength, latentDims = 512, 128
 t0 = time.time()
 
-noisySpecs, cleanSpecs, specNames, soilSpecs, wavenumbers = io.load_microFTIR_spectra(specLength)
+noisySpecs, cleanSpecs, specNames, soilSpecs, wavenumbers = io.load_microFTIR_spectra(SPECLENGTH)
 print(f'loading and remapping spectra took {round(time.time()-t0)} seconds')
 experimentTitle = 'MicroFTIR Spectra'
 
@@ -30,8 +30,7 @@ testSpectra = prepareSpecSet(cleanSpecs[validationIndices, :], transpose=False)
 noisyTestSpectra = prepareSpecSet(noisySpecs[validationIndices, :], transpose=False)
 
 
-# rec = load_model("micro_Reconstructor")
-rec = Reconstructor(specLength=specLength, latentDims=latentDims)
+rec = getReconstructor()
 rec.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 history = rec.fit(noisyTrainSpectra, trainSpectra,
                   epochs=200, validation_data=(noisyTestSpectra, testSpectra),

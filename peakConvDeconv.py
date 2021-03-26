@@ -1,8 +1,9 @@
-import numpy as np
-from scipy.signal import gaussian
-from scipy.optimize import least_squares
-from typing import List, Tuple
 from functools import lru_cache
+from typing import List, Tuple
+
+import numpy as np
+from scipy.optimize import least_squares
+from scipy.signal import gaussian
 
 
 def getSpecFromPeaks(posWidthAreas: List[Tuple[float, float, float]], specLength: int) -> np.ndarray:

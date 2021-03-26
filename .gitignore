@@ -4,3 +4,5 @@
 __pycache__/
 
 ATR_Denoising_Search/
+
+venv/

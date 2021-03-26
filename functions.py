@@ -19,10 +19,11 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple
+
 import numpy as np
-from sklearn.decomposition import PCA
 from sklearn.cluster import k_means
+from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 

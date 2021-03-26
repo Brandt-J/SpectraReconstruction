@@ -1,13 +1,12 @@
-import numpy as np
 import time
+import numpy as np
 
-from functions import reduceSpecsToNWavenumbers
+import outGraphs as out
 import distort
 import importData as io
-import outGraphs as out
-from Reconstruction import prepareSpecSet, getReconstructor, optimizeRec
+from Reconstruction import prepareSpecSet, optimizeRec, getReconstructor
+from functions import reduceSpecsToNWavenumbers
 from globals import SPECLENGTH
-
 
 noiseLevel = 0.15
 t0 = time.time()

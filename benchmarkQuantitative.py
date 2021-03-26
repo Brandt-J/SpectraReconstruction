@@ -1,10 +1,9 @@
 import numpy as np
 
 import distort
-from peakConvDeconv import getSpecFromPeaks
 import outGraphs as out
 from Reconstruction import prepareSpecSet, getReconstructor
-from globals import SPECLENGTH
+from peakConvDeconv import getSpecFromPeaks
 
 SPECLENGTH, latentDims = 512, 32
 noiseLevel = 0.7
