@@ -6,3 +6,9 @@ __pycache__/
 ATR_Denoising_Search/
 
 venv/
+
+ATR_Denoising_Search1/
+
+venv_tf/
+
+NetworkSearch/

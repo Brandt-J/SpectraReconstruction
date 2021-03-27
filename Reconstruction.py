@@ -3,6 +3,7 @@ import tensorflow as tf
 from kerastuner.tuners import RandomSearch
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Sequential
+from tensorflow.keras import regularizers
 
 
 def preprocessSpec(intensities: np.ndarray) -> np.ndarray:
@@ -32,11 +33,11 @@ def optimizeRec(X_train, y_train, X_test, y_test):
         objective='val_accuracy',
         max_trials=100,
         executions_per_trial=2,
-        directory='ATR_Denoising_Search')
+        directory='NetworkSearch')
 
     tuner.search(x=X_train,
                  y=y_train,
-                 epochs=5,
+                 epochs=3,
                  validation_data=(X_test, y_test))
     return tuner
 
@@ -44,26 +45,41 @@ def optimizeRec(X_train, y_train, X_test, y_test):
 def getReconstructor(hp=None) -> Sequential:
     from globals import SPECLENGTH
     if hp is None:
-        latentDims = 128
-        numLayers = 0
+        latentDims: int = 96
+        numLayers: int = 1
+        regularization: int = 1
+        regPower: float = 1e-5
     else:
         latentDims: int = hp.Int("n_latentDims", 32, 128, 32)
         numLayers: int = hp.Int("n_layers", 0, 3)
+        regularization: int = hp.Int("regularization", 0, 2)
+        regPower: float = hp.Choice("regPower", values=[1e-2, 1e-3, 1e-4, 1e-5])
+
     layerDims: np.ndarray = np.linspace(np.log(latentDims), np.log(SPECLENGTH), numLayers+1, endpoint=False)
     layerDimsEnc: np.ndarray = np.uint16(np.round(np.exp(layerDims[1:])))
     layerDimsDec: np.ndarray = layerDimsEnc[::-1]
 
     rec: Sequential = Sequential()
     for i in range(numLayers):
-        rec.add(Dense(layerDimsEnc[i], activation="relu"))
+        rec.add(getDenseLayer(layerDimsEnc[i], regularization=regularization, regPower=regPower))
 
-    rec.add(Dense(latentDims, activation="relu"))
+    rec.add(getDenseLayer(latentDims, regularization=regularization, regPower=regPower))
 
     for i in range(numLayers):
-        rec.add(Dense(layerDimsDec[i], activation="relu"))
+        rec.add(getDenseLayer(layerDimsDec[i], regularization=regularization, regPower=regPower))
 
-    rec.add(Dense(SPECLENGTH, activation="relu"))
+    rec.add(getDenseLayer(SPECLENGTH, regularization=regularization, regPower=regPower))
 
     rec.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
     return rec
+
+
+def getDenseLayer(numNodes: int, regularization: int, regPower: float = 1e-3) -> Dense:
+    if regularization == 0:  # no regularization
+        dense = Dense(numNodes, activation='relu')
+    elif regularization == 1:  # L1
+        dense = Dense(numNodes, activation='relu', activity_regularizer=regularizers.l1(regPower))
+    else:  # L2
+        dense = Dense(numNodes, activation='relu', activity_regularizer=regularizers.l2(regPower))
+    return dense
 
