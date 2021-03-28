@@ -10,8 +10,8 @@ from globals import SPECLENGTH
 
 noiseLevel = 0.15
 t0 = time.time()
-numTrainSpectra, numTestSpectra = 50, 20
-numVariationsTrain, numVariationsTest = 5000, 100
+numTrainSpectra, numTestSpectra = 90, 20
+numVariationsTrain, numVariationsTest = 500, 10
 
 experimentTitle = "Neural Net Denoising"
 print(experimentTitle)
@@ -28,13 +28,13 @@ testSpectra = np.tile(specs[:, numTrainSpectra:], (1, numVariationsTest))
 
 t0 = time.time()
 np.random.seed(42)
-noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel/2)
-noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel/2)
-# for _ in range(3):
-#     noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*5)
-#     noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*5)
-#     noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*5)
-#     noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*5)
+noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=42)
+noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=43)
+for i in range(3):
+    noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*5, seed=44*i)
+    noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*5, seed=45*i)
+    noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*5, seed=46*i)
+    noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*5, seed=47*i)
 print(f'Distorting spectra took {round(time.time()-t0, 2)} seconds')
 
 
@@ -44,19 +44,19 @@ noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra)
 noisyTestSpectra = prepareSpecSet(noisyTestSpectra)
 
 
-tuner = optimizeRec(noisyTrainSpectra, trainSpectra, noisyTestSpectra, testSpectra)
+# tuner = optimizeRec(noisyTrainSpectra, trainSpectra, noisyTestSpectra, testSpectra)
 
-# rec = getReconstructor()
-# history = rec.fit(noisyTrainSpectra, trainSpectra,
-#                   epochs=10, validation_data=(noisyTestSpectra, testSpectra),
-#                   batch_size=32, shuffle=True)
-#
-# reconstructedSpecs = rec.call(noisyTestSpectra)
-# histplot = out.getHistPlot(history.history, title=experimentTitle)
-# specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
-#                                               includeSavGol=True,
-#                                               wavenumbers=wavenums,
-#                                               title=experimentTitle)
-#
+rec = getReconstructor()
+history = rec.fit(noisyTrainSpectra, trainSpectra,
+                  epochs=10, validation_data=(noisyTestSpectra, testSpectra),
+                  batch_size=32, shuffle=True)
+
+reconstructedSpecs = rec.call(noisyTestSpectra)
+histplot = out.getHistPlot(history.history, title=experimentTitle)
+specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
+                                              includeSavGol=True,
+                                              wavenumbers=wavenums,
+                                              title=experimentTitle)
+
 # # corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra.numpy(), reconstructedSpecs.numpy(),
 # #                                      testSpectra.numpy(), noisyTrainSpectra.numpy())

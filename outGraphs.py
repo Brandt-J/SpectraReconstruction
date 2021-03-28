@@ -1,12 +1,13 @@
 import random
-from typing import List, Dict, Tuple
-
+from typing import List, Dict, Tuple, TYPE_CHECKING
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+if TYPE_CHECKING:
+    from tensorflow.python.framework.ops import EagerTensor
 
 from peakConvDeconv import recoverPeakAreas
 
@@ -36,9 +37,14 @@ def getHistPlot(history: Dict[str, List], title: str = '', annotate: bool = True
     return histPlot
 
 
-def getSpectraComparisons(origSpecs: np.ndarray, noisySpecs: np.ndarray, recSpecs: np.ndarray,
+def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', recSpecs: 'EagerTensor',
                           wavenumbers: np.ndarray, title: str = '',
                           includeSavGol: bool = True) -> Tuple[plt.Figure, plt.Figure]:
+
+    origSpecs: np.ndarray = tensor_to_npy2D(origSpecs)
+    noisySpecs: np.ndarray = tensor_to_npy2D(noisySpecs)
+    recSpecs: np.ndarray = tensor_to_npy2D(recSpecs)
+
     wavenumbers = np.linspace(wavenumbers[0], wavenumbers[-1], origSpecs.shape[1])
     plotIndices = []
     corrs = np.zeros((len(recSpecs), 2))
@@ -73,18 +79,18 @@ def getSpectraComparisons(origSpecs: np.ndarray, noisySpecs: np.ndarray, recSpec
             #         break
 
         for i in range(len(recSpecs)):
-            orig = origSpecs[i].numpy()
-            noisy = noisySpecs[i].numpy()
-            reconst = recSpecs[i].numpy()
+            orig = origSpecs[i]
+            noisy = noisySpecs[i]
+            reconst = recSpecs[i]
 
             if step == "step1":
                 corrNN = np.corrcoef(orig, reconst)[0, 1] * 100
                 if np.isnan(corrNN):
                     corrNN = 0
                 corrs[i, 0] = corrNN
-                savgol = savgol_filter(noisy, window_length=21, polyorder=4)
-                corrSavGol = np.round(np.corrcoef(orig, savgol)[0, 1] * 100)
-                corrs[i, 1] = corrSavGol
+                # savgol = savgol_filter(noisy, window_length=21, polyorder=4)
+                # corrSavGol = np.round(np.corrcoef(orig, savgol)[0, 1] * 100)
+                # corrs[i, 1] = corrSavGol
 
             elif step == "step2":
                 if i in plotIndices:
@@ -239,3 +245,15 @@ def getAccuracies(peakParams: list, reconstSpecs: np.ndarray) -> List[float]:
             peakInd += 1
 
     return areaAccuracies
+
+
+def tensor_to_npy2D(tensor: 'EagerTensor') -> np.ndarray:
+    """
+    Converts a tensor into 2D numpy array
+    :param tensor:
+    :return: (NxM) nparray of N sampes with M features
+    """
+    arr: np.ndarray = tensor.numpy()
+    if len(arr.shape) == 3:
+        arr = arr.reshape((arr.shape[0], arr.shape[1]))
+    return arr

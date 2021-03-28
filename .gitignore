@@ -12,3 +12,9 @@ ATR_Denoising_Search1/
 venv_tf/
 
 NetworkSearch/
+
+noisyTest.npy
+
+noisyTrain.npy
+
+Conv1DModel/

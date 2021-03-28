@@ -75,7 +75,7 @@ def append_n_distorted_copies(spectra: np.ndarray, n: int, level: float = 0.3, s
     return finalSpectra
 
 
-@numba.njit()
+# @numba.njit()
 def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.ndarray:
     """
     Adds random distortions with max height of "level" to the set of spectra.
@@ -85,6 +85,7 @@ def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
     :return: the altered spectra, shape (N, M) array
     """
     spectra: np.ndarray = spectra.copy()
+    xaxis = np.arange(spectra.shape[0])
     for i in range(spectra.shape[1]):
         seed += 1
         np.random.seed(seed)
@@ -96,20 +97,19 @@ def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
         intensities /= (maxVal - minVal)
 
         # Bend Baseline
-        randIntens = np.random.rand() * level
-        randFreq = 5e-5 + np.random.rand() * 4e-3
+        randIntens = min([np.random.rand() * level, 0.9])
+        randFreq = 1e-4 + np.random.rand() * 0.05
         randOffset = np.random.rand() * 1000
-        distortion = np.sin(spectra[:, 0] * randFreq + randOffset)
-        for j in range(np.random.randint(1, 5)):
-            power = np.random.randint(1, 5)
-            distortion += 0.5 * np.random.rand() * np.sin(spectra[:, 0] * randFreq * (j+3) + (j+1) * randOffset) ** power
+        distortion = np.sin(xaxis * randFreq + randOffset)
+        for j in range(np.random.randint(1, 3)):
+            distortion *= np.random.rand() * np.sin(xaxis * randFreq + randOffset/2)
 
         distortion -= distortion.min()
         distortion /= distortion.max()
         # Have distortion only on the left-hand side of spectra (that's, where they usually occur)
         steep = float(np.random.rand()) + 1.0
         center = float(np.random.rand()) * 0.4 + 0.2
-        distortion *= invsigmoid(spectra[:, 0], steepness=steep, center=center)
+        distortion = distortion * invsigmoid(xaxis, steepness=steep, center=center)
         intensities = (1 - randIntens) * intensities + randIntens * distortion
 
         intensities *= (maxVal - minVal)
@@ -151,7 +151,6 @@ def add_ghost_peaks(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
     return spectra
 
 
-@numba.njit()
 def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.ndarray:
     """
     Adds random noise to the spectra..
@@ -170,7 +169,7 @@ def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.nda
     return spectra
 
 
-@numba.njit()
+# @numba.njit()
 def invsigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> np.ndarray:
     """
     Calculates an inverted sigmoid function to the provided x-axis. It goes from 1.0 at lowest x-values to 0.0 at highest
@@ -181,8 +180,8 @@ def invsigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> 
     :return: inverted sigmoid matching the x-axis
     """
     # Normalize and scale the x-axis
-    xaxis = xaxis.copy()
-    xaxis -= xaxis.min()
+    xaxis = np.float64(xaxis.copy())
+    xaxis = xaxis - np.min(xaxis)
     xaxis /= xaxis.max()
     xaxis *= steepness * 10
     xaxis -= steepness * 10 * center
