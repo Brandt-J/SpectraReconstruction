@@ -88,9 +88,9 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
                 if np.isnan(corrNN):
                     corrNN = 0
                 corrs[i, 0] = corrNN
-                # savgol = savgol_filter(noisy, window_length=21, polyorder=4)
-                # corrSavGol = np.round(np.corrcoef(orig, savgol)[0, 1] * 100)
-                # corrs[i, 1] = corrSavGol
+                savgol = savgol_filter(noisy, window_length=21, polyorder=4)
+                corrSavGol = np.round(np.corrcoef(orig, savgol)[0, 1] * 100)
+                corrs[i, 1] = corrSavGol
 
             elif step == "step2":
                 if i in plotIndices:

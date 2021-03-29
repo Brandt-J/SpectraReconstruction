@@ -1,26 +1,14 @@
 import numpy as np
 import tensorflow as tf
 from kerastuner.tuners import RandomSearch
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.models import Sequential
 from tensorflow.keras import regularizers
-
-
-def preprocessSpec(intensities: np.ndarray) -> np.ndarray:
-    intensities -= intensities.min()
-    if intensities.max() != 0.0:
-        intensities /= intensities.max()
-    return intensities
+from sklearn import preprocessing
 
 
 def prepareSpecSet(specSet: np.ndarray, transpose: bool = True):
-    if transpose:
-        for i in range(specSet.shape[1]):
-            specSet[:, i] = preprocessSpec(specSet[:, i])
-    else:
-        for i in range(specSet.shape[0]):
-            specSet[i, :] = preprocessSpec(specSet[i, :])
-
+    specSet = preprocessing.minmax_scale(specSet, feature_range=(0.0, 1.0))
     if transpose:
         specSet = specSet.transpose()
     specSet = tf.cast(specSet, tf.float32)
@@ -45,9 +33,9 @@ def optimizeRec(X_train, y_train, X_test, y_test):
 def getReconstructor(hp=None) -> Sequential:
     from globals import SPECLENGTH
     if hp is None:
-        latentDims: int = 96
-        numLayers: int = 1
-        regularization: int = 1
+        latentDims: int = 128
+        numLayers: int = 0
+        regularization: int = 0
         regPower: float = 1e-5
     else:
         latentDims: int = hp.Int("n_latentDims", 32, 128, 32)
@@ -62,11 +50,13 @@ def getReconstructor(hp=None) -> Sequential:
     rec: Sequential = Sequential()
     for i in range(numLayers):
         rec.add(getDenseLayer(layerDimsEnc[i], regularization=regularization, regPower=regPower))
+        # rec.add(Dropout(0.2))
 
     rec.add(getDenseLayer(latentDims, regularization=regularization, regPower=regPower))
 
     for i in range(numLayers):
         rec.add(getDenseLayer(layerDimsDec[i], regularization=regularization, regPower=regPower))
+        # rec.add(Dropout(0.2))
 
     rec.add(getDenseLayer(SPECLENGTH, regularization=regularization, regPower=regPower))
 
