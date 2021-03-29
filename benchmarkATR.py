@@ -1,6 +1,9 @@
 import time
 import numpy as np
 
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.layers import Dense, Conv1D, Input, Flatten, MaxPooling1D, Conv1DTranspose, InputLayer, UpSampling1D
+
 import outGraphs as out
 import distort
 import importData as io
@@ -44,24 +47,24 @@ np.save("noisyTest.npy", noisyTestSpectra)
 # noisyTestSpectra = np.load("noisyTest.npy")
 print(f'Distorting spectra took {round(time.time()-t0, 2)} seconds')
 
-trainSpectra = prepareSpecSet(trainSpectra)
-testSpectra = prepareSpecSet(testSpectra)
-noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra)
-noisyTestSpectra = prepareSpecSet(noisyTestSpectra)
-
-# tuner = optimizeRec(noisyTrainSpectra, trainSpectra, noisyTestSpectra, testSpectra)
+addDimension = True
+trainSpectra = prepareSpecSet(trainSpectra, addDimension=addDimension)
+testSpectra = prepareSpecSet(testSpectra, addDimension=addDimension)
+noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=addDimension)
+noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=addDimension)
 
 rec = getReconstructor()
+rec.summary()
 history = rec.fit(noisyTrainSpectra, trainSpectra,
-                  epochs=50, validation_data=(noisyTestSpectra, testSpectra),
+                  epochs=100, validation_data=(noisyTestSpectra, testSpectra),
                   batch_size=32, shuffle=True)
 
 reconstructedSpecs = rec.call(noisyTestSpectra)
-histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
+histplot = out.getHistPlot(history.history, title=experimentTitle)
 specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
-                                              includeSavGol=True,
+                                              includeSavGol=False,
                                               wavenumbers=wavenums,
                                               title=experimentTitle)
-
-# # corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra.numpy(), reconstructedSpecs.numpy(),
+# #
+# # # corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra.numpy(), reconstructedSpecs.numpy(),
 # #                                      testSpectra.numpy(), noisyTrainSpectra.numpy())
