@@ -45,8 +45,10 @@ def getNMostDifferentSpectra(assignments: List[str], spectra: np.ndarray, n: int
     validIndices = np.where(np.logical_and(princComps[:, 0] < 10, princComps[:, 1] < 10))[0]
     princComps: np.ndarray = princComps[validIndices, :]
     centers = k_means(princComps, n, random_state=42)[0]
-
     for i in range(n):
+        spec = spectra[:, i+1]
+        spec -= spec.min()
+        spec /= spec.max()
         distances = np.linalg.norm(princComps-centers[i, :], axis=1)
         indices.append(validIndices[int(np.argmin(distances))])
 
@@ -57,7 +59,7 @@ def getNMostDifferentSpectra(assignments: List[str], spectra: np.ndarray, n: int
     # plt.xlabel('PC 1')
     # plt.ylabel('PC 2')
     # plt.title(f'Chosing {n} out of {princComps.shape[0]} spectra')
-    # plt.show(block=True)
+    # plt.show()
 
     assignments = [assignments[i] for i in indices]
     indices = [0] + [i + 1 for i in indices]

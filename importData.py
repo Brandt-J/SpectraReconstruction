@@ -24,30 +24,20 @@ from typing import List, Tuple
 from functions import getNMostDifferentSpectra, reduceSpecsToNWavenumbers, remapSpectrumToWavenumbers, remapSpecArrayToWavenumbers
 
 
-def load_microFTIR_spectra(specLength: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_microFTIR_spectra(specLength: int, maxCorr: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Loads the Spectra from the MicroFTIR Spectra directory.
     :param specLength: Number of wavenumbers for the spectra
-    :return: (NoisyPolymers, CleanPolymers, polymNames, SoilSpectra, wavenumbers)
+    :param maxCorr: Highest correlation between clean and noisy spec to take.
+    :return: (NoisyPolymers, CleanPolymers, polymNames, wavenumbers)
     """
     path: str = "MicroFTIRSpectra"
     allSpecs: np.ndarray = np.load(os.path.join(path, "polymers.npy"))
     allSpecs = reduceSpecsToNWavenumbers(allSpecs, specLength)
-    soilSpecs: np.ndarray = np.load(os.path.join(path, "soil.npy"))
     wavenumbers = allSpecs[:, 0].copy()
-    soilSpecs = remapSpecArrayToWavenumbers(soilSpecs, wavenumbers).transpose()
 
-    polyms_noisy = np.transpose(allSpecs[:, 1:])
+    polyms_noisy_all = np.transpose(allSpecs[:, 1:])
     polymNames = np.genfromtxt(os.path.join(path, "polymerNames.txt"), dtype=str)
-
-    # sampler = over_sampling.SMOTE(random_state=42)
-    # sampler = over_sampling.ADASYN(random_state=42)
-    # sampler = over_sampling.RandomOverSampler(random_state=42)
-    # sampler = under_sampling.ClusterCentroids(random_state=42)
-    # print(f'balancing with: {sampler}, num specs before: {len(polyms_noisy)}')
-    # polyms_noisy, polymNames = sampler.fit_resample(polyms_noisy, polymNames)
-    # print(f'num specs after balancing: {len(polyms_noisy)}')
-    # allSpecs = allSpecs.transpose()
 
     uniqueAssignments: List[str] = list(np.unique(polymNames))
     uniqueSpectra: List[np.ndarray] = []
@@ -55,13 +45,18 @@ def load_microFTIR_spectra(specLength: int) -> Tuple[np.ndarray, np.ndarray, np.
         cleanSpec = np.loadtxt(os.path.join(path, assignment+".txt"), delimiter=',')
         cleanSpec = remapSpectrumToWavenumbers(cleanSpec, wavenumbers)
         uniqueSpectra.append(cleanSpec)
-    Polyms_Clean: np.ndarray = np.zeros_like(polyms_noisy)
 
+    polyms_noisy: List[np.ndarray] = []
+    polyms_Clean: List[np.ndarray] = []
     for i, assignment in enumerate(polymNames):
         specIndex = uniqueAssignments.index(assignment)
-        Polyms_Clean[i, :] = uniqueSpectra[specIndex][:, 1]
+        cleanSpec = uniqueSpectra[specIndex][:, 1]
+        noisySpec = polyms_noisy_all[i, :]
+        if np.corrcoef(cleanSpec, noisySpec)[0, 1] <= maxCorr:
+            polyms_noisy.append(noisySpec)
+            polyms_Clean.append(cleanSpec)
 
-    return polyms_noisy, Polyms_Clean, polymNames, soilSpecs, wavenumbers
+    return np.array(polyms_noisy), np.array(polyms_Clean), polymNames, wavenumbers
 
 
 def load_specCSVs_from_directory(path: str, fixName: str = None, maxSpectra=1e6) -> Tuple[List[str], np.ndarray]:

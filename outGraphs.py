@@ -6,6 +6,7 @@ import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report
 if TYPE_CHECKING:
     from tensorflow.python.framework.ops import EagerTensor
 
@@ -31,7 +32,8 @@ def getHistPlot(history: Dict[str, List], title: str = '', annotate: bool = True
         for i, (train, val) in enumerate(zip(history["loss"], history["val_loss"])):
             histAx.annotate(f'{round(train, 3)}', xy=(xAxis[i], train), textcoords='data')
             histAx.annotate(f'{round(val, 3)}', xy=(xAxis[i], val), textcoords='data')
-    histAx.set_yscale("log")
+    # histAx.set_yscale("log")
+    # histAx.set_ylim(8e-4, 2e-2)
     histAx.legend()
     histAx.set_title(title)
     return histPlot
@@ -149,13 +151,18 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     return fig, boxfig
 
 
-def getCorrelationPCAPlot(noisy: np.ndarray, reconstructed: np.ndarray,
-                          true: np.ndarray, train: np.ndarray) -> plt.Figure:
+def getCorrelationPCAPlot(noisy: 'EagerTensor', reconstructed: 'EagerTensor',
+                          true: 'EagerTensor', train: 'EagerTensor') -> plt.Figure:
+    noisy: np.ndarray = tensor_to_npy2D(noisy)
+    reconstructed: np.ndarray = tensor_to_npy2D(reconstructed)
+    true: np.ndarray = tensor_to_npy2D(true)
+    train: np.ndarray = tensor_to_npy2D(train)
+
     corrs: List[float] = []
     for specTrue, specReconst in zip(true, reconstructed):
         corrs.append(np.corrcoef(specTrue, specReconst)[0, 1] * 100)
     corrs: np.ndarray = np.array(corrs)
-    maxPointsNoisy, maxPointsTrain = 200, 10000
+    maxPointsNoisy, maxPointsTrain = 500, 10000
     if noisy.shape[0] > maxPointsNoisy:
         sortedCorrs = np.argsort(corrs)
         maxPointsNoisy = round(maxPointsNoisy / 2)
@@ -179,7 +186,7 @@ def getCorrelationPCAPlot(noisy: np.ndarray, reconstructed: np.ndarray,
     princComps[:, 0] /= princComps[:, 0].max()
     princComps[:, 1] -= princComps[:, 1].min()
     princComps[:, 1] /= princComps[:, 1].max()
-    heatMapSize = 30
+    heatMapSize = 50
     heatmap = np.zeros((heatMapSize, heatMapSize))
     for i in range(numTrain):
         x = int(min([round(princComps[numNoisy+i, 0] * heatMapSize), heatMapSize-1]))
@@ -194,23 +201,28 @@ def getCorrelationPCAPlot(noisy: np.ndarray, reconstructed: np.ndarray,
         distances.append(heatmap[x, y])
 
     fig: plt.Figure = plt.figure()
-    ax1: plt.Axes = fig.add_subplot(121)
+    ax1: plt.Axes = fig.add_subplot()
     ax1.imshow(heatmap, cmap='gray', alpha=0.75)
-    goodBadBorder = int(numNoisy/2)
-    ax1.scatter(princComps[:goodBadBorder, 0]*heatMapSize, princComps[:goodBadBorder, 1]*heatMapSize, color='red', s=16, alpha=1.0)
-    ax1.scatter(princComps[goodBadBorder:numNoisy, 0] * heatMapSize, princComps[goodBadBorder:numNoisy, 1] * heatMapSize,
-                color='green', s=16, alpha=1.0)
+
+    sortedIndices = np.argsort(corrs)
+    goodBadBorder = int(len(sortedIndices)/2)
+    goodIndices, badIndices = sortedIndices[:goodBadBorder], sortedIndices[goodBadBorder:]
+    ax1.scatter(princComps[badIndices, 0]*heatMapSize, princComps[badIndices, 1]*heatMapSize, color='red',
+                label='poor reconstruction', s=16, alpha=1.0)
+    ax1.scatter(princComps[goodIndices, 0] * heatMapSize, princComps[goodIndices, 1] * heatMapSize,
+                label='good reconstruction', color='green', s=16, alpha=1.0)
     ax1.set_xlim(0, heatMapSize-1)
     ax1.set_ylim(0, heatMapSize-1)
     ax1.set_xticks([])
     ax1.set_yticks([])
-    ax1.set_title('PCA Map of training and validation')
+    ax1.set_title('PCA Map of validation data')
+    ax1.legend()
 
-    ax2: plt.Axes = fig.add_subplot(122)
-    ax2.scatter(distances[:goodBadBorder], corrs[:goodBadBorder], color='red')
-    ax2.scatter(distances[goodBadBorder:numNoisy], corrs[goodBadBorder:numNoisy], color='green')
-    ax2.set_xlabel("training data coverage (a.u.)")
-    ax2.set_ylabel("prediction quality")
+    # ax2: plt.Axes = fig.add_subplot(122)
+    # ax2.scatter(distances[:goodBadBorder], corrs[:goodBadBorder], color='red')
+    # ax2.scatter(distances[goodBadBorder:numNoisy], corrs[goodBadBorder:numNoisy], color='green')
+    # ax2.set_xlabel("training data coverage (a.u.)")
+    # ax2.set_ylabel("prediction quality")
     fig.tight_layout()
     return fig
 
@@ -257,3 +269,38 @@ def tensor_to_npy2D(tensor: 'EagerTensor') -> np.ndarray:
     if len(arr.shape) == 3:
         arr = arr.reshape((arr.shape[0], arr.shape[1]))
     return arr
+
+
+def getSpecCorrelation(reconstructedSpecs: 'EagerTensor', origNames: List[str], dbSpecs: np.ndarray, dbNames: List[str]):
+    """
+    Gets Quality of Spectra Reconstruction by running a correlation to database spectra.
+    :param reconstructedSpecs: Eager Tensor of reconstructed Spectra
+    :param origNames: Expected Names for each reconstructed Spectrum
+    :param dbSpecs: (NxM) array of database Specs (M spectra with N wavenumbers)
+    :param dbNames: Names of spectra in database
+    :return:
+    """
+    specs: np.ndarray = tensor_to_npy2D(reconstructedSpecs)
+    dbSpecs = dbSpecs.copy().transpose()
+    predictedNames: List[str] = []
+    for i in range(specs.shape[0]):
+        predictedName: str = getPredictionForSpec(specs[i, :], dbSpecs, dbNames)
+        predictedNames.append(predictedName)
+
+    report = classification_report(origNames, predictedNames)
+    return predictedNames, report
+
+
+def getPredictionForSpec(intensities: np.ndarray, dbSpectra: np.ndarray, dbNames: List[str], thresh: float = 0.00) -> str:
+    assert dbSpectra.shape[0] == len(dbNames)
+    assert dbSpectra.shape[1] == len(intensities)
+    numDBSpecs: int = len(dbNames)
+    corrs: np.ndarray = np.zeros(numDBSpecs)
+    for i in range(numDBSpecs):
+        corrs[i] = np.corrcoef(intensities, dbSpectra[i, :])[0, 1]
+    maxCorr = corrs.max()
+    if maxCorr < thresh:
+        assignment = 'unknown'
+    else:
+        assignment = dbNames[np.argmax(corrs)]
+    return assignment

@@ -1,1 +1,1 @@
-SPECLENGTH: int = 512
+SPECLENGTH: int = 1024

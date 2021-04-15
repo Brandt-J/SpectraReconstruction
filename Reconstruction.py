@@ -1,22 +1,29 @@
 import numpy as np
 import tensorflow as tf
-from kerastuner.tuners import RandomSearch
-from tensorflow.keras.layers import InputLayer, Conv1D, UpSampling1D, MaxPooling1D, Conv1DTranspose, Dropout
+from tensorflow.keras.layers import InputLayer, Dense, Conv1D, MaxPooling1D, Conv1DTranspose, Dropout
 from tensorflow.keras.models import Sequential
-from tensorflow.keras import regularizers
-from sklearn import preprocessing
 
 
-def prepareSpecSet(specSet: np.ndarray, transpose: bool = True):
-    specSet = preprocessing.minmax_scale(specSet, feature_range=(0.0, 1.0))
+def normalizeSpecSet(specSet: np.ndarray) -> np.ndarray:
+    """
+    Normalizing Specset to 0.0 -> 1.0 range, for each spectrum individually
+    :param specSet: (N x M) array of N spectra with M wavenumbers
+    :return: normalized specset
+    """
+    for i in range(specSet.shape[0]):
+        intens: np.ndarray = specSet[i, :]
+        intens -= intens.min()
+        if intens.max() != 0:
+            intens /= intens.max()
+        specSet[i, :] = intens
+    return specSet
+
+
+def prepareSpecSet(specSet: np.ndarray, transpose: bool = True, addDimension: bool = False):
     if transpose:
         specSet = specSet.transpose()
 
-    specSet = normalize(specSet)
-
-    # scaler: StandardScaler = StandardScaler()
-    # specSet = scaler.fit_transform(specSet)
-
+    specSet = normalizeSpecSet(specSet)
     if addDimension:
         specSet = specSet.reshape(specSet.shape[0], specSet.shape[1], 1)
 
@@ -24,35 +31,33 @@ def prepareSpecSet(specSet: np.ndarray, transpose: bool = True):
     return specSet
 
 
-def optimizeRec(X_train, y_train, X_test, y_test):
-    tuner = RandomSearch(
-        getReconstructor,
-        objective='val_accuracy',
-        max_trials=100,
-        executions_per_trial=2,
-        directory='NetworkSearch')
-
-    tuner.search(x=X_train,
-                 y=y_train,
-                 epochs=3,
-                 validation_data=(X_test, y_test))
-    return tuner
-
-
-def getReconstructor() -> Sequential:
+def getConvReconstructor() -> Sequential:
     from globals import SPECLENGTH
     model: Sequential = Sequential()
     model.add(InputLayer(input_shape=(SPECLENGTH, 1)))
-    model.add(Conv1D(64, 16, padding='same', activation="relu"))
-    model.add(MaxPooling1D(2, padding='same'))  # activation??
-    model.add(Conv1D(32, 8, activation="relu", padding="same"))
+    model.add(Conv1D(32, 4, padding='same', activation="relu"))
+    model.add(MaxPooling1D(2, padding='same'))
+    model.add(Conv1D(32, 4, activation="relu", padding="same"))
     model.add(MaxPooling1D(2, padding="same"))
 
-    model.add(Conv1DTranspose(32, 3, activation="relu", padding="same"))
-    model.add(UpSampling1D(2))
-    model.add(Conv1DTranspose(64, 16, activation='relu', padding="same"))
-    model.add(UpSampling1D(2))
+    model.add(Conv1DTranspose(32, 4, activation="relu", padding="same"))
+    model.add(Conv1DTranspose(32, 4, activation='relu', padding="same"))
     model.add(Conv1D(1, 1, activation='relu', padding='same'))
-    model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    model.compile(optimizer='adam', loss='mse')
     return model
 
+
+def getDenseReconstructor(dropout: float = 0.0) -> Sequential:
+    from globals import SPECLENGTH
+
+    rec: Sequential = Sequential()
+    rec.add(InputLayer(input_shape=(SPECLENGTH)))
+    if dropout > 0.0:
+        rec.add(Dropout(dropout))
+    rec.add(Dense(128, activation="relu"))
+    if dropout > 0.0:
+        rec.add(Dropout(dropout))
+    rec.add(Dense(SPECLENGTH, activation="relu"))
+
+    rec.compile(optimizer='adam', loss='mse')
+    return rec

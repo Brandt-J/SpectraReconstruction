@@ -1,70 +1,101 @@
 import time
 import numpy as np
-
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Dense, Conv1D, Input, Flatten, MaxPooling1D, Conv1DTranspose, InputLayer, UpSampling1D
+import random
+from typing import List
+from copy import copy
 
 import outGraphs as out
 import distort
 import importData as io
-from Reconstruction import prepareSpecSet, optimizeRec, getReconstructor
+from Reconstruction import prepareSpecSet, getDenseReconstructor, getConvReconstructor
 from functions import reduceSpecsToNWavenumbers
 from globals import SPECLENGTH
 
-noiseLevel = 0.15
-t0 = time.time()
-numTrainSpectra, numTestSpectra = 60, 60
-numVariationsTrain, numVariationsTest = 500, 500
+noiseLevel: float = 0.2
+useConvNetwork: bool = False
+fracValid: float = 0.4
+randomShuffle: bool = False
+specTypesTotal: int = 100
+numVariations: int = 100
 
-experimentTitle = "Neural Net Denoising"
+# experimentTitle = f"Spectra Reconstruction, using {'convolutional' if useConvNetwork else 'dense'} network"
+experimentTitle = "TestSpectra not known to network (no dropout)"
 print(experimentTitle)
 
-specNames, spectra = io.load_specCSVs_from_directory("ATR Spectra", maxSpectra=numTrainSpectra+numTestSpectra)
+t0 = time.time()
+specNames, spectra = io.load_specCSVs_from_directory("ATR Spectra", maxSpectra=specTypesTotal)
 wavenums = spectra[:, 0].copy()
 spectra = reduceSpecsToNWavenumbers(spectra, SPECLENGTH)
+specs: np.ndarray = spectra[:, 1:]
+dbSpecs: np.ndarray = specs.copy()
+dbNames: List[str] = copy(specNames)
+
 print(f'loading and remapping spectra took {round(time.time()-t0)} seconds')
 
-specs: np.ndarray = spectra[:, 1:]
-trainSpectra: np.ndarray = np.tile(specs[:, :numTrainSpectra], (1, numVariationsTrain))
-
-testSpectra = np.tile(specs[:, numTrainSpectra:], (1, numVariationsTest))
-
-numSpecsTotal = len(trainSpectra) + len(testSpectra)
+if randomShuffle:
+    specs = np.tile(specs, (1, numVariations))
+    numSpecs = specs.shape[1]
+    valIndices = random.sample(range(numSpecs), int(round(numSpecs * fracValid)))
+    trainIndices = [i for i in range(numSpecs) if i not in valIndices]
+    trainSpectra: np.ndarray = specs[:, trainIndices]
+    testSpectra: np.ndarray = specs[:, valIndices]
+    allSpecNames = specNames*numVariations
+    testNames: List[str] = [allSpecNames[i] for i in valIndices]
+else:
+    numTestSpectra = int(round(fracValid * specTypesTotal))
+    numTrainSpectra = specTypesTotal - numTestSpectra
+    trainSpectra: np.ndarray = np.tile(specs[:, :numTrainSpectra], (1, numVariations))
+    testSpectra = np.tile(specs[:, numTrainSpectra:], (1, numVariations))
+    testNames: List[str] = specNames[numTrainSpectra:] * numVariations
 
 t0 = time.time()
+numSpecsTotal = len(trainSpectra) + len(testSpectra)
 np.random.seed(42)
 noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=0)
 noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=numSpecsTotal)
 for i in range(3):
-    noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*5, seed=i * numSpecsTotal)
-    noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*5, seed=i * numSpecsTotal)
-    noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*5, seed=2*i * numSpecsTotal)
-    noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*5, seed=2*i * numSpecsTotal)
+    noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
+    noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
+    noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
+    noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
 
 np.save("noisyTrain.npy", noisyTrainSpectra)
 np.save("noisyTest.npy", noisyTestSpectra)
-# noisyTrainSpectra = np.load("noisyTrain.npy")
-# noisyTestSpectra = np.load("noisyTest.npy")
+noisyTrainSpectra = np.load("noisyTrain.npy")
+noisyTestSpectra = np.load("noisyTest.npy")
 print(f'Distorting spectra took {round(time.time()-t0, 2)} seconds')
 
-addDimension = True
-trainSpectra = prepareSpecSet(trainSpectra, addDimension=addDimension)
-testSpectra = prepareSpecSet(testSpectra, addDimension=addDimension)
-noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=addDimension)
-noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=addDimension)
+trainSpectra = prepareSpecSet(trainSpectra, addDimension=useConvNetwork)
+testSpectra = prepareSpecSet(testSpectra, addDimension=useConvNetwork)
+noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=useConvNetwork)
+noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=useConvNetwork)
 
-rec = getReconstructor()
+if useConvNetwork:
+    rec = getConvReconstructor()
+else:
+    rec = getDenseReconstructor(dropout=0.0 if randomShuffle else 0.00)
+
 rec.summary()
+t0 = time.time()
 history = rec.fit(noisyTrainSpectra, trainSpectra,
-                  epochs=100, validation_data=(noisyTestSpectra, testSpectra),
+                  epochs=20,
+                  validation_data=(noisyTestSpectra, testSpectra),
                   batch_size=32, shuffle=True)
+print(f"Training took {round(time.time()-t0, 2)} seconds.")
 
+t0 = time.time()
 reconstructedSpecs = rec.call(noisyTestSpectra)
-histplot = out.getHistPlot(history.history, title=experimentTitle)
+print(f'reconstruction took {round(time.time()-t0, 2)} seconds')
+
+histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
 specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
                                               includeSavGol=False,
                                               wavenumbers=wavenums,
                                               title=experimentTitle)
-# #
-# # # corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra.numpy(), reconstructedSpecs.numpy(),
-# #                                      testSpectra.numpy(), noisyTrainSpectra.numpy())
+histplot.show()
+boxPlot.show()
+
+corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra, reconstructedSpecs, testSpectra, trainSpectra)
+
+predictedNames, report = out.getSpecCorrelation(reconstructedSpecs, testNames, dbSpecs, dbNames)
+print(report)
