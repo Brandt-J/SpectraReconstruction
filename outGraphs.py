@@ -1,14 +1,13 @@
 import random
 from typing import List, Dict, Tuple, TYPE_CHECKING
-import cv2
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report
-if TYPE_CHECKING:
-    from tensorflow.python.framework.ops import EagerTensor
+from tensorflow.python.framework.ops import EagerTensor
 
 from peakConvDeconv import recoverPeakAreas
 
@@ -32,16 +31,27 @@ def getHistPlot(history: Dict[str, List], title: str = '', annotate: bool = True
         for i, (train, val) in enumerate(zip(history["loss"], history["val_loss"])):
             histAx.annotate(f'{round(train, 3)}', xy=(xAxis[i], train), textcoords='data')
             histAx.annotate(f'{round(val, 3)}', xy=(xAxis[i], val), textcoords='data')
-    # histAx.set_yscale("log")
-    # histAx.set_ylim(8e-4, 2e-2)
+
     histAx.legend()
     histAx.set_title(title)
     return histPlot
 
 
 def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', recSpecs: 'EagerTensor',
-                          wavenumbers: np.ndarray, title: str = '',
+                          wavenumbers: np.ndarray, title: str = '', randomIndSeed: int = 42,
                           includeSavGol: bool = True) -> Tuple[plt.Figure, plt.Figure]:
+    """
+    Used for creating an overview of the spectra reconstruction
+    :param origSpecs: Tensor of original spectra
+    :param noisySpecs: Tensor of noisy (or distorted) spectra
+    :param recSpecs: Tensor of recunstructed spectra
+    :param wavenumbers: Wavenumbers to use for the plots
+    :param title: Title to give the spectra overview
+    :param randomIndSeed: if True, random spectra are used for plotting. If an integer is provided, it is used as
+                          seed for the random index selection. If False,
+    :param includeSavGol:
+    :return:
+    """
 
     origSpecs: np.ndarray = tensor_to_npy2D(origSpecs)
     noisySpecs: np.ndarray = tensor_to_npy2D(noisySpecs)
@@ -53,32 +63,13 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     fig: plt.Figure = plt.figure(figsize=(14, 7))
     for step in ["step1", "step2"]:
         if step == "step2" and plotIndices == []:
-            plotIndices = random.sample(range(corrs.shape[0]), 4)
-            # diffCorrs = list(corrs[:, 0] - corrs[:, 1])
-            # if includeSavGol:
-            #     validDiffs = [diff for i, diff in enumerate(diffCorrs) if corrs[i, 0] < 60]
-            # else:
-            #     validDiffs = diffCorrs
-            # sortedDiffs = sorted(validDiffs)
-            # plotIndices.append(diffCorrs.index(sortedDiffs[-1]))
-            # ind = -2
-            # while True:
-            #     nextInd = diffCorrs.index(sortedDiffs[ind])
-            #     if nextInd in plotIndices:
-            #         ind -= 1
-            #     else:
-            #         plotIndices.append(nextInd)
-            #         break
-            #
-            # plotIndices.append(diffCorrs.index(sortedDiffs[0]))
-            # ind = 1
-            # while True:
-            #     nextInd = diffCorrs.index(sortedDiffs[ind])
-            #     if nextInd in plotIndices:
-            #         ind += 1
-            #     else:
-            #         plotIndices.append(nextInd)
-            #         break
+            if randomIndSeed is not None:
+                random.seed(randomIndSeed if type(randomIndSeed) == int else 42)
+                plotIndices = random.sample(range(corrs.shape[0]), 4)
+            else:
+                indGoodNN = np.argwhere(corrs[:, 0] > 90).flatten()
+                indBadNN = np.argwhere(corrs[:, 0] < 50).flatten()
+                plotIndices = list(indGoodNN[-2:]) + list(indBadNN[-2:])
 
         for i in range(len(recSpecs)):
             orig = origSpecs[i]
@@ -91,7 +82,7 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
                     corrNN = 0
                 corrs[i, 0] = corrNN
                 savgol = savgol_filter(noisy, window_length=21, polyorder=4)
-                corrSavGol = np.round(np.corrcoef(orig, savgol)[0, 1] * 100)
+                corrSavGol = np.corrcoef(orig, savgol)[0, 1] * 100
                 corrs[i, 1] = corrSavGol
 
             elif step == "step2":
@@ -135,10 +126,10 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     fig.tight_layout()
 
     if includeSavGol:
-        summary = title + f'\nmean NN: {round(np.mean(corrs[:, 0]))}, mean savgol: {round(np.mean(corrs[:, 1]), 2)}'
+        summary = title + f'\nmean NN: {round(np.mean(corrs[:, 0]))}, mean savgol: {round(np.mean(corrs[:, 1]))}'
     else:
         summary = title + f'\nmean NN: {round(np.mean(corrs[:, 0]))}'
-    boxfig = plt.figure(figsize=(4, 5))
+    boxfig: plt.Figure = plt.figure(figsize=(4, 5))
     box_ax: plt.Axes = boxfig.add_subplot()
     if includeSavGol:
         box_ax.boxplot(corrs, labels=['Neuronal\nNet', 'Savitzky-\nGolay'], widths=[0.6, 0.6], showfliers=False)
@@ -147,92 +138,83 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     box_ax.set_title(summary, fontsize=12)
     box_ax.set_ylabel('Pearson Correlation (%)')
     box_ax.set_ylim(min([0, corrs.min()]), 100)
+    boxfig.tight_layout()
 
     return fig, boxfig
 
 
-def getCorrelationPCAPlot(noisy: 'EagerTensor', reconstructed: 'EagerTensor',
-                          true: 'EagerTensor', train: 'EagerTensor') -> plt.Figure:
-    noisy: np.ndarray = tensor_to_npy2D(noisy)
+def getCorrelationPCAPlot(noisyTest: 'EagerTensor', reconstructed: 'EagerTensor',
+                          true: 'EagerTensor', noisyTrain: 'EagerTensor') -> plt.Figure:
+    noisyTest: np.ndarray = tensor_to_npy2D(noisyTest)
     reconstructed: np.ndarray = tensor_to_npy2D(reconstructed)
     true: np.ndarray = tensor_to_npy2D(true)
-    train: np.ndarray = tensor_to_npy2D(train)
-
+    noisyTrain: np.ndarray = tensor_to_npy2D(noisyTrain)
     corrs: List[float] = []
     for specTrue, specReconst in zip(true, reconstructed):
-        corrs.append(np.corrcoef(specTrue, specReconst)[0, 1] * 100)
+        corrs.append(np.corrcoef(specTrue, specReconst)[0, 1])
     corrs: np.ndarray = np.array(corrs)
-    maxPointsNoisy, maxPointsTrain = 500, 10000
-    if noisy.shape[0] > maxPointsNoisy:
-        sortedCorrs = np.argsort(corrs)
-        maxPointsNoisy = round(maxPointsNoisy / 2)
-        indices = np.append(sortedCorrs[:maxPointsNoisy], sortedCorrs[-maxPointsNoisy:])  # take half of the best, half of the worst..
-        noisy = noisy[indices, :]
-        corrs = corrs[indices]
 
-    if train.shape[0] > maxPointsTrain:
-        randIndices = random.sample(range(train.shape[0]), maxPointsTrain)
-        train = train[randIndices, :]
-
-    numNoisy, numTrain = noisy.shape[0], train.shape[0]
-    noisyPlusTrain: np.ndarray = np.vstack((noisy, train))
+    numNoisyTest, numNoisyTrain = noisyTest.shape[0], noisyTrain.shape[0]
+    noisyTestPlusnoisyTrain: np.ndarray = np.vstack((noisyTest, noisyTrain))
     standardScaler: StandardScaler = StandardScaler()
-    standardScaler.fit(noisyPlusTrain)
-    pca: PCA = PCA(n_components=2, random_state=42)
-    princComps: np.ndarray = pca.fit_transform(noisyPlusTrain)
-    distances: List[float] = []
-
-    princComps[:, 0] -= princComps[:, 0].min()
-    princComps[:, 0] /= princComps[:, 0].max()
-    princComps[:, 1] -= princComps[:, 1].min()
-    princComps[:, 1] /= princComps[:, 1].max()
-    heatMapSize = 50
-    heatmap = np.zeros((heatMapSize, heatMapSize))
-    for i in range(numTrain):
-        x = int(min([round(princComps[numNoisy+i, 0] * heatMapSize), heatMapSize-1]))
-        y = int(min([round(princComps[numNoisy+i, 1] * heatMapSize), heatMapSize-1]))
-        heatmap[x, y] += 1
-
-    heatmap = cv2.blur(heatmap, ksize=(5, 5))
-
-    for i in range(numNoisy):
-        x = int(min([round(princComps[i, 0] * heatMapSize), heatMapSize-1]))
-        y = int(min([round(princComps[i, 1] * heatMapSize), heatMapSize-1]))
-        distances.append(heatmap[x, y])
+    standardScaler.fit(noisyTestPlusnoisyTrain)
+    pca: PCA = PCA(n_components=3, random_state=42)
+    princComps: np.ndarray = pca.fit_transform(noisyTestPlusnoisyTrain)
+    princComps -= princComps.min()
+    princComps /= princComps.max()
 
     fig: plt.Figure = plt.figure()
-    ax1: plt.Axes = fig.add_subplot()
-    ax1.imshow(heatmap, cmap='gray', alpha=0.75)
+    ax1: plt.Axes = fig.add_subplot(projection='3d')
+    plot = ax1.scatter(princComps[:numNoisyTest, 0], princComps[:numNoisyTest, 1], princComps[:numNoisyTest, 2], c=corrs, alpha=0.5)
+    ax1.set_title('PCA Map of Testing data', fontsize=14)
+    cb = fig.colorbar(plot)
+    cb.set_label("Correlation Reconstruction -> Target", fontsize=12)
 
-    sortedIndices = np.argsort(corrs)
-    goodBadBorder = int(len(sortedIndices)/2)
-    goodIndices, badIndices = sortedIndices[:goodBadBorder], sortedIndices[goodBadBorder:]
-    ax1.scatter(princComps[badIndices, 0]*heatMapSize, princComps[badIndices, 1]*heatMapSize, color='red',
-                label='poor reconstruction', s=16, alpha=1.0)
-    ax1.scatter(princComps[goodIndices, 0] * heatMapSize, princComps[goodIndices, 1] * heatMapSize,
-                label='good reconstruction', color='green', s=16, alpha=1.0)
-    ax1.set_xlim(0, heatMapSize-1)
-    ax1.set_ylim(0, heatMapSize-1)
-    ax1.set_xticks([])
-    ax1.set_yticks([])
-    ax1.set_title('PCA Map of validation data')
-    ax1.legend()
-
-    # ax2: plt.Axes = fig.add_subplot(122)
-    # ax2.scatter(distances[:goodBadBorder], corrs[:goodBadBorder], color='red')
-    # ax2.scatter(distances[goodBadBorder:numNoisy], corrs[goodBadBorder:numNoisy], color='green')
-    # ax2.set_xlabel("training data coverage (a.u.)")
-    # ax2.set_ylabel("prediction quality")
     fig.tight_layout()
     return fig
 
 
-def getPeakAreaBoxPlot(peakParams: list, reconstSpecs: np.ndarray, noisySpecs: np.ndarray) -> plt.Figure:
-    areaAccuraciesNN: List[float] = getAccuracies(peakParams, reconstSpecs)
+def getCorrelationToTrainDistancePlot(noisy: 'EagerTensor', noisyEncoded: 'EagerTensor', reconstructed: 'EagerTensor',
+                                      true: 'EagerTensor', trainEncoded: 'EagerTensor', numClosestPoints: int = 5) -> plt.Figure:
+    noisy: np.ndarray = tensor_to_npy2D(noisy)
+    noisyEncoded: np.ndarray = tensor_to_npy2D(noisyEncoded)
+    reconstructed: np.ndarray = tensor_to_npy2D(reconstructed)
+    true: np.ndarray = tensor_to_npy2D(true)
+    trainEncoded: np.ndarray = tensor_to_npy2D(trainEncoded)
+    corrs: np.ndarray = np.zeros(noisy.shape[0])
+    for i, (specTrue, specReconst) in enumerate(zip(true, reconstructed)):
+        corrs[i] = np.corrcoef(specTrue, specReconst)[0, 1]
+
+    minDistances: np.ndarray = np.zeros_like(corrs)
+    plotDistances: np.ndarray = np.zeros_like(corrs)
+    origCorrs: np.ndarray = np.zeros_like(corrs)
+
+    for i in range(noisyEncoded.shape[0]):
+        distances = np.linalg.norm(trainEncoded - noisyEncoded[i, :], axis=1)
+        avgMinDist = np.mean(np.sort(distances)[:numClosestPoints])
+        minDistances[i] = avgMinDist
+        plotDistances[i] = (1000*avgMinDist**2 + corrs[i]**2)**0.5
+        origCorrs[i] = np.corrcoef(noisy[i, :], true[i, :])[0, 1]
+
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    plot = ax.scatter(minDistances, corrs, c=origCorrs, alpha=1.0, label='testing data')
+    ax.set_xlabel(f"Average Distance to {numClosestPoints} closest Training Point", fontsize=12)
+    ax.set_ylabel("Correlation Reconstruction -> Target", fontsize=12)
+    ax.set_title("Distance of Testing to Training data", fontsize=14)
+    cb = fig.colorbar(plot)
+    cb.set_label("Correlation Input -> Target", fontsize=12)
+    fig.tight_layout()
+    return fig
+
+
+def getPeakAreaBoxPlot(peakParams: List[List[Tuple[float, float, float]]],
+                       reconstSpecs: np.ndarray, noisySpecs: np.ndarray) -> plt.Figure:
+    areaAccuraciesNN: List[float] = getDeconvolutionAccuracies(peakParams, reconstSpecs)
     savGolSpecs = np.zeros_like(noisySpecs)
     for i in range(noisySpecs.shape[0]):
         savGolSpecs[i, :] = savgol_filter(noisySpecs[i, :], window_length=21, polyorder=4)
-    areaAccuraciesSG: List[float] = getAccuracies(peakParams, savGolSpecs)
+    areaAccuraciesSG: List[float] = getDeconvolutionAccuracies(peakParams, savGolSpecs)
 
     fig: plt.Figure = plt.figure()
     ax: plt.Axes = fig.add_subplot()
@@ -245,27 +227,29 @@ def getPeakAreaBoxPlot(peakParams: list, reconstSpecs: np.ndarray, noisySpecs: n
     return fig
 
 
-def getAccuracies(peakParams: list, reconstSpecs: np.ndarray) -> List[float]:
+def getDeconvolutionAccuracies(peakParamsList: List[List[Tuple[float, float, float]]], reconstSpecs: np.ndarray) -> List[float]:
     areaAccuracies: List[float] = []
-    peakInd = 0
-    for peakParams, reconstSpec in zip(peakParams, reconstSpecs):
+    for peakParams, reconstSpec in zip(peakParamsList, reconstSpecs):
         recoveredAreas = recoverPeakAreas(reconstSpec, peakParams)
         origAreas = [i[2] for i in peakParams]
         for recovered, orig in zip(recoveredAreas, origAreas):
             error = abs(recovered - orig) / orig
             areaAccuracies.append(100 - (error * 100))
-            peakInd += 1
 
     return areaAccuracies
 
 
-def tensor_to_npy2D(tensor: 'EagerTensor') -> np.ndarray:
+def tensor_to_npy2D(tensor: EagerTensor) -> np.ndarray:
     """
     Converts a tensor into 2D numpy array
     :param tensor:
     :return: (NxM) nparray of N sampes with M features
     """
-    arr: np.ndarray = tensor.numpy()
+    if type(tensor) == np.ndarray:
+        arr: np.ndarray = tensor
+    elif type(tensor) == EagerTensor:
+        arr: np.ndarray = tensor.numpy()
+
     if len(arr.shape) == 3:
         arr = arr.reshape((arr.shape[0], arr.shape[1]))
     return arr

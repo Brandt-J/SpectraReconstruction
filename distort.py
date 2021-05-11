@@ -20,12 +20,10 @@ If not, see <https://www.gnu.org/licenses/>.
 
 
 import matplotlib.pyplot as plt
-import numba
 import numpy as np
 from scipy.signal import gaussian
 
 
-@numba.njit()
 def append_n_distorted_copies(spectra: np.ndarray, n: int, level: float = 0.3, seed: int = 42,
                               plot: bool = False) -> np.ndarray:
     """
@@ -75,7 +73,28 @@ def append_n_distorted_copies(spectra: np.ndarray, n: int, level: float = 0.3, s
     return finalSpectra
 
 
-# @numba.njit()
+def distort_to_max_correlation(spectra: np.ndarray, maxCorr: float, seed: int = 42) -> np.ndarray:
+    """
+    Adds random distortions to each spectrum, until its correlation to the original spectrum is less then maxCorr.
+    :param spectra: (N, M) array, M spectra with N wavenumbers, no wavenumbers
+    :param maxCorr: The maximum correlation to input spectra
+    :param seed: Random seed
+    :return: the altered spectra, shape (N, M) array
+    """
+    origSpecs: np.ndarray = spectra.copy()
+    specs: np.ndarray = spectra.copy()
+    for i in range(spectra.shape[1]):
+        corr = np.corrcoef(origSpecs[:, i], specs[:, i])[0, 1]
+        while corr > maxCorr:
+            specs[:, i] = add_noise(specs[:, i][:, np.newaxis], seed=seed)[:, 0]
+            specs[:, i] = add_distortions(specs[:, i][:, np.newaxis], seed=seed)[:, 0]
+            specs[:, i] = add_ghost_peaks(specs[:, i][:, np.newaxis], seed=seed)[:, 0]
+            corr = np.corrcoef(origSpecs[:, i], specs[:, i])[0, 1]
+            seed += 1
+
+    return specs
+
+
 def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.ndarray:
     """
     Adds random distortions with max height of "level" to the set of spectra.
@@ -129,7 +148,7 @@ def add_ghost_peaks(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
     for i in range(spectra.shape[1]):
         seed += 1
         np.random.seed(seed)
-        intensities: numba.types.float64[:] = spectra[:, i]
+        intensities = spectra[:, i]
         # for each, first normalize, then add the distortion, then scale back up to orig dimensions
         minVal, maxVal = intensities.min(), intensities.max()
         intensities -= minVal
@@ -163,13 +182,12 @@ def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.nda
     spectra = spectra.copy()
     numWavenums: int = spectra.shape[0]
 
-    for i in range(spectra.shape[1]-1):
+    for i in range(spectra.shape[1]):
         randomNoise = np.random.rand(numWavenums)
         spectra[:, i] = (1-level)*spectra[:, i] + level*randomNoise
     return spectra
 
 
-# @numba.njit()
 def invsigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> np.ndarray:
     """
     Calculates an inverted sigmoid function to the provided x-axis. It goes from 1.0 at lowest x-values to 0.0 at highest

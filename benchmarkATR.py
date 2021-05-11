@@ -7,19 +7,18 @@ from copy import copy
 import outGraphs as out
 import distort
 import importData as io
-from Reconstruction import prepareSpecSet, getDenseReconstructor, getConvReconstructor
+from Reconstruction import prepareSpecSet, Reconstructor, getConvReconstructor, getDenseReconstructor
 from functions import reduceSpecsToNWavenumbers
 from globals import SPECLENGTH
 
-noiseLevel: float = 0.2
+noiseLevel: float = 0.2  # Level to
 useConvNetwork: bool = False
-fracValid: float = 0.4
+fracValid: float = 0.18
 randomShuffle: bool = False
-specTypesTotal: int = 100
-numVariations: int = 100
+specTypesTotal: int = 110
+numVariations: int = 5000
 
-# experimentTitle = f"Spectra Reconstruction, using {'convolutional' if useConvNetwork else 'dense'} network"
-experimentTitle = "TestSpectra not known to network (no dropout)"
+experimentTitle = f"Spectra Reconstruction, using {'convolutional' if useConvNetwork else 'dense'} network"
 print(experimentTitle)
 
 t0 = time.time()
@@ -50,14 +49,16 @@ else:
 
 t0 = time.time()
 numSpecsTotal = len(trainSpectra) + len(testSpectra)
-np.random.seed(42)
+# noisyTrainSpectra = distort.distort_to_max_correlation(trainSpectra, maxCorr=0.4, seed=0)
+# noisyTestSpectra = distort.distort_to_max_correlation(testSpectra, maxCorr=0.4, seed=numSpecsTotal)
+
 noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=0)
 noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=numSpecsTotal)
-for i in range(3):
-    noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
-    noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
-    noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
-    noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
+# for i in range(3):
+#     noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
+#     noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
+#     noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
+#     noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
 
 np.save("noisyTrain.npy", noisyTrainSpectra)
 np.save("noisyTest.npy", noisyTestSpectra)
@@ -71,14 +72,13 @@ noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=useConvNetwor
 noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=useConvNetwork)
 
 if useConvNetwork:
-    rec = getConvReconstructor()
+    rec: Reconstructor = getConvReconstructor()
 else:
-    rec = getDenseReconstructor(dropout=0.0 if randomShuffle else 0.00)
+    rec: Reconstructor = getDenseReconstructor(dropout=0.0 if randomShuffle else 0.00)
 
-rec.summary()
 t0 = time.time()
 history = rec.fit(noisyTrainSpectra, trainSpectra,
-                  epochs=20,
+                  epochs=10,
                   validation_data=(noisyTestSpectra, testSpectra),
                   batch_size=32, shuffle=True)
 print(f"Training took {round(time.time()-t0, 2)} seconds.")
@@ -89,13 +89,13 @@ print(f'reconstruction took {round(time.time()-t0, 2)} seconds')
 
 histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
 specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
-                                              includeSavGol=False,
+                                              includeSavGol=True,
                                               wavenumbers=wavenums,
                                               title=experimentTitle)
-histplot.show()
-boxPlot.show()
 
-corrPlot = out.getCorrelationPCAPlot(noisyTestSpectra, reconstructedSpecs, testSpectra, trainSpectra)
-
-predictedNames, report = out.getSpecCorrelation(reconstructedSpecs, testNames, dbSpecs, dbNames)
-print(report)
+# predictedNames, report = out.getSpecCorrelation(reconstructedSpecs, testNames, dbSpecs, dbNames)
+#
+# noisyTestSpectraEncoded = rec.encoder(noisyTestSpectra)
+# noisyTrainSpectraEncoded = rec.encoder(noisyTrainSpectra)
+# corrPlot = out.getCorrelationPCAPlot(noisyTestSpectraEncoded, reconstructedSpecs, testSpectra, noisyTrainSpectraEncoded)
+# distPlot = out.getCorrelationToTrainDistancePlot(noisyTestSpectra, noisyTestSpectraEncoded, reconstructedSpecs, testSpectra, noisyTrainSpectraEncoded)

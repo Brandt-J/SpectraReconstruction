@@ -1,6 +1,7 @@
 import unittest
 
 from peakConvDeconv import *
+from outGraphs import getDeconvolutionAccuracies
 
 
 class TestConvolutionDeconvolution(unittest.TestCase):
@@ -28,5 +29,21 @@ class TestConvolutionDeconvolution(unittest.TestCase):
         recoveredAreas: List[float] = recoverPeakAreas(noisySpec, centerWidthAreas)
         for area1, area2 in zip(areas, recoveredAreas):
             self.assertAlmostEqual(area1, area2, places=1)
+
+    def test_getDeconvolutionAccuracies(self) -> None:
+        centers = [30, 20, 70]
+        widths = [5, 5, 7]
+        areas = [1, 3, 2]
+        # Note: The first two Peaks overlap quite strongly, so the second one is a shoulder to the first one..
+        centerWidthAreas = list(zip(centers, widths, areas))
+        spec = getSpecFromPeaks(centerWidthAreas, 100)
+        accuracies = getDeconvolutionAccuracies([centerWidthAreas], spec[np.newaxis, :])
+        self.assertEqual(accuracies, [100, 100, 100])
+
+        areas = [area*2 for area in areas]
+        centerWidthAreas = list(zip(centers, widths, areas))
+        accuracies = getDeconvolutionAccuracies([centerWidthAreas], spec[np.newaxis, :])
+        for acc in accuracies:
+            self.assertAlmostEqual(acc, 50, places=3)
 
 
