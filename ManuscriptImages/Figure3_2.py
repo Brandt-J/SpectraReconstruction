@@ -19,6 +19,7 @@ print(f'loading and remapping {numSpecs} spectra took {round(time.time()-t0)} se
 experimentTitle = 'MicroFTIR Spectra'
 
 np.random.seed(42)
+random.seed(42)
 fracValid = 0.50
 validationIndices: list = random.sample(range(numSpecs), round(numSpecs * fracValid))
 valIndSet = set(validationIndices)
@@ -46,6 +47,6 @@ print(f'reconstruction took {round(time.time()-t0, 2)} seconds')
 histPLot = out.getHistPlot(history.history, annotate=False)
 specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
                                               includeSavGol=False,
-                                              randomIndSeed=6,
+                                              randomIndSeed=1,
                                               wavenumbers=wavenumbers,
                                               title=experimentTitle)
