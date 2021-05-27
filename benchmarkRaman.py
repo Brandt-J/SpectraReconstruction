@@ -1,31 +1,36 @@
 import time
-import os
 import numpy as np
 import random
 from typing import List
+from copy import copy
 
 import outGraphs as out
 import distort
 import importData as io
-from Reconstruction import prepareSpecSet, Reconstructor, getDenseReconstructor
+from Reconstruction import prepareSpecSet, Reconstructor, getConvReconstructor, getDenseReconstructor
 from functions import reduceSpecsToNWavenumbers
 from globals import SPECLENGTH
 
-os.chdir(os.path.dirname(os.getcwd()))
-
-noiseLevel: float = 0.15
+noiseLevel: float = 0.2
+useConvNetwork: bool = False
 fracValid: float = 0.2
-specTypesTotal: int = 100
+randomShuffle: bool = True
+specTypesTotal: int = 120
 numVariations: int = 100
+
+experimentTitle = f"Removal of fluorescence contributions"
+print(experimentTitle)
 
 t0 = time.time()
 specNames, spectra = io.load_specCSVs_from_directory("ATR Spectra", maxSpectra=specTypesTotal)
 wavenums = spectra[:, 0].copy()
 spectra = reduceSpecsToNWavenumbers(spectra, SPECLENGTH)
 specs: np.ndarray = spectra[:, 1:]
+dbSpecs: np.ndarray = specs.copy()
+dbNames: List[str] = copy(specNames)
+
 print(f'loading and remapping spectra took {round(time.time()-t0)} seconds')
 
-randomShuffle = False
 if randomShuffle:
     specs = np.tile(specs, (1, numVariations))
     numSpecs = specs.shape[1]
@@ -45,26 +50,33 @@ else:
 t0 = time.time()
 numSpecsTotal = len(trainSpectra) + len(testSpectra)
 
+
 noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=0)
 noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=numSpecsTotal)
-for i in range(3):
-    noisyTrainSpectra = distort.add_distortions(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
-    noisyTestSpectra = distort.add_ghost_peaks(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
-    noisyTestSpectra = distort.add_distortions(noisyTestSpectra, level=noiseLevel*2, seed=2*i * numSpecsTotal)
-    noisyTrainSpectra = distort.add_ghost_peaks(noisyTrainSpectra, level=noiseLevel*2, seed=i * numSpecsTotal)
+
+levelRange = (1.0, 5.0)
+noisyTrainSpectra = distort.add_fluorescence(noisyTrainSpectra, levelRange=levelRange, seed=0)
+noisyTestSpectra = distort.add_fluorescence(noisyTestSpectra, levelRange=levelRange, seed=numSpecsTotal)
+
+noisyTrainSpectra = distort.add_cosmic_ray_peaks(noisyTrainSpectra, numRange=(2, 5), seed=0)
+noisyTestSpectra = distort.add_cosmic_ray_peaks(noisyTestSpectra, numRange=(2, 5), seed=numSpecsTotal)
+
 
 print(f'Distorting spectra took {round(time.time()-t0, 2)} seconds')
 
-trainSpectra = prepareSpecSet(trainSpectra, addDimension=False)
-testSpectra = prepareSpecSet(testSpectra, addDimension=False)
-noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=False)
-noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=False)
+trainSpectra = prepareSpecSet(trainSpectra, addDimension=useConvNetwork)
+testSpectra = prepareSpecSet(testSpectra, addDimension=useConvNetwork)
+noisyTrainSpectra = prepareSpecSet(noisyTrainSpectra, addDimension=useConvNetwork)
+noisyTestSpectra = prepareSpecSet(noisyTestSpectra, addDimension=useConvNetwork)
 
-rec: Reconstructor = getDenseReconstructor(dropout=0.0 if randomShuffle else 0.00)
+if useConvNetwork:
+    rec: Reconstructor = getConvReconstructor()
+else:
+    rec: Reconstructor = getDenseReconstructor(dropout=0.0 if randomShuffle else 0.15)
 
 t0 = time.time()
 history = rec.fit(noisyTrainSpectra, trainSpectra,
-                  epochs=10,
+                  epochs=20,
                   validation_data=(noisyTestSpectra, testSpectra),
                   batch_size=32, shuffle=True)
 print(f"Training took {round(time.time()-t0, 2)} seconds.")
@@ -73,7 +85,8 @@ t0 = time.time()
 reconstructedSpecs = rec.call(noisyTestSpectra)
 print(f'reconstruction took {round(time.time()-t0, 2)} seconds')
 
-noisyTestSpectraEncoded = rec.encoder(noisyTestSpectra)
-noisyTrainSpectraEncoded = rec.encoder(noisyTrainSpectra)
-corrPlot = out.getCorrelationPCAPlot(noisyTestSpectraEncoded, reconstructedSpecs, testSpectra, noisyTrainSpectraEncoded)
-distPlot = out.getCorrelationToTrainDistancePlot(noisyTestSpectra, noisyTestSpectraEncoded, reconstructedSpecs, testSpectra, noisyTrainSpectraEncoded)
+histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
+specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
+                                              includeSavGol=False,
+                                              wavenumbers=wavenums,
+                                              title=experimentTitle)

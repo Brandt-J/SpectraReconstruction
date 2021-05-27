@@ -139,7 +139,6 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     box_ax.set_ylabel('Pearson Correlation (%)')
     box_ax.set_ylim(min([0, corrs.min()]), 100)
     boxfig.tight_layout()
-
     return fig, boxfig
 
 

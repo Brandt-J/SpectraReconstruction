@@ -20,8 +20,9 @@ If not, see <https://www.gnu.org/licenses/>.
 import os
 import numpy as np
 from typing import List, Tuple
+import h5py
 
-from functions import getNMostDifferentSpectra, reduceSpecsToNWavenumbers, remapSpectrumToWavenumbers, remapSpecArrayToWavenumbers
+from functions import getNMostDifferentSpectra, reduceSpecsToNWavenumbers, remapSpectrumToWavenumbers
 
 
 def load_microFTIR_spectra(specLength: int, maxCorr: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -57,6 +58,32 @@ def load_microFTIR_spectra(specLength: int, maxCorr: float = 1.0) -> Tuple[np.nd
             polyms_Clean.append(cleanSpec)
 
     return np.array(polyms_noisy), np.array(polyms_Clean), polymNames, wavenumbers
+
+
+def load_reference_Raman_spectra() -> np.ndarray:
+    specs = []
+    file = h5py.File(r"RamanReferenceSpectra/Raman reference spectra.h5")
+    for i, sample in enumerate(file['Samples'].keys()):
+        sample = file['Samples'][str(sample)]
+        spec = sample['Spectra']
+        data = spec[str(list(spec.keys())[0])]
+        origSpec = data['SpectralData<p:ArbitrarySpacedOriginalSpectrum>']
+
+        spec = np.array(origSpec)
+        spec = (spec - spec.min()) / (spec.max() - spec.min())
+
+        if i == 0:  # Estimate wavenumbers, I manually took the values from a PET spectrum (it's the last one)
+            peak1, peak2 = 1750, 3100
+            ind1, ind2 = 690, 1311
+            wavenums = np.arange(len(spec))
+            wavenums -= ind1
+            wavenums = wavenums * (peak2 - peak1) / (ind2 - ind1)
+            wavenums += peak1
+            specs.append(wavenums)
+
+        specs.append(spec)
+
+    return np.array(specs).transpose()
 
 
 def load_specCSVs_from_directory(path: str, fixName: str = None, maxSpectra=1e6) -> Tuple[List[str], np.ndarray]:

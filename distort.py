@@ -22,6 +22,7 @@ If not, see <https://www.gnu.org/licenses/>.
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import gaussian
+from typing import Tuple
 
 
 def append_n_distorted_copies(spectra: np.ndarray, n: int, level: float = 0.3, seed: int = 42,
@@ -117,18 +118,7 @@ def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
 
         # Bend Baseline
         randIntens = min([np.random.rand() * level, 0.9])
-        randFreq = 1e-4 + np.random.rand() * 0.05
-        randOffset = np.random.rand() * 1000
-        distortion = np.sin(xaxis * randFreq + randOffset)
-        for j in range(np.random.randint(1, 3)):
-            distortion *= np.random.rand() * np.sin(xaxis * randFreq + randOffset/2)
-
-        distortion -= distortion.min()
-        distortion /= distortion.max()
-        # Have distortion only on the left-hand side of spectra (that's, where they usually occur)
-        steep = float(np.random.rand()) + 1.0
-        center = float(np.random.rand()) * 0.4 + 0.2
-        distortion = distortion * invsigmoid(xaxis, steepness=steep, center=center)
+        distortion = _generateSinDistortion(xaxis, (1e-4, 1e-4+0.05))
         intensities = (1 - randIntens) * intensities + randIntens * distortion
 
         intensities *= (maxVal - minVal)
@@ -138,6 +128,119 @@ def add_distortions(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
 
     return spectra
 
+
+def _generateSinDistortion(xaxis: np.ndarray, frequencyRange: Tuple[float, float],
+                           numModes: Tuple[int, int] = (1, 3), left: bool = True) -> np.ndarray:
+    """
+    Generates a sinusoidal distortion
+    :param xaxis:
+    :param frequencyRange: Min and Max of frequency to use
+    :param numModes: Min and Max number of modes to create
+    :param left: If the sin distortions are stronger on the left, or on the right.
+    :return:
+    """
+    randFreq = frequencyRange[0] + np.random.rand() * (frequencyRange[1]-frequencyRange[0])
+    randOffset = np.random.rand() * 1000
+    distortion = np.sin(xaxis * randFreq + randOffset)
+    if numModes[0] == numModes[1]:
+        modeRange = [numModes[0]]
+    else:
+        modeRange = range(np.random.randint(1, 3))
+    for _ in modeRange:
+        distortion *= np.random.rand() * np.sin(xaxis * randFreq + randOffset / 2)
+    distortion -= distortion.min()
+    distortion /= distortion.max()
+
+    steep = float(np.random.rand()) + 1.0
+    center = float(np.random.rand()) * 0.4 + 0.2
+    factor = _sigmoid(xaxis, steepness=steep, center=center)
+    if left:
+        factor = factor[::-1]
+    distortion = distortion * factor
+    return distortion
+
+
+def add_fluorescence(spectra: np.ndarray, levelRange: Tuple[float, float] = (1, 5), seed: int = 42) -> np.ndarray:
+    """
+    Adds a broad fluorescence_peak contribution, so that the fluoresence is stronger by a factor within the "levelRange" than
+    the original signal
+    :param spectra: (N, M) array, M spectra with N wavenumbers, no wavenumbers
+    :param levelRange: (minimum, maximum) Factor of what the fluorescence_peak is stronger than the signal
+    :param seed: random seed to use
+    """
+    spectra = spectra.copy()
+    np.random.seed(seed)
+    for i in range(spectra.shape[1]):
+        curSpec: np.ndarray = spectra[:, i]
+        curSpec = (curSpec - curSpec.min()) / (curSpec.max() - curSpec.min())
+
+        gaussWidth = int(np.random.rand() * spectra.shape[0] * 0.4 + spectra.shape[0] * 0.6)  # 0.8 - 1.0 times spec length
+        gaussStd = 0.3 * gaussWidth
+        
+        fluorescence_peak: np.ndarray = gaussian(gaussWidth, gaussStd)
+        fluorescence_peak = (fluorescence_peak - fluorescence_peak.min()) / (fluorescence_peak.max() - fluorescence_peak.min())
+        latestPossibleStart = spectra.shape[0] - gaussWidth
+        fluorStart = np.random.randint(0, latestPossibleStart)
+        # fluorStart: int = int((spectra.shape[0] - gaussWidth) / 2)
+        fluorEnd: int = fluorStart + gaussWidth
+        if fluorEnd >= spectra.shape[0]:
+            diff = spectra.shape[0] - fluorEnd - 1
+            fluorEnd -= diff
+            fluorescence_peak = fluorescence_peak[:-diff]
+
+        fluorescence = np.zeros_like(curSpec)
+        gaussIntens = levelRange[0] + np.random.rand() * (levelRange[1] - levelRange[0])
+        fluorescence[fluorStart:fluorEnd] = fluorescence_peak * gaussIntens
+
+        spectra[:, i] = curSpec + fluorescence
+
+    return spectra
+
+
+def add_periodic_interferences_raman(spectra: np.ndarray, seed: int = 42) -> np.ndarray:
+    """
+    Adds periodic intereferences at the right hand side of the spectra, as sometimes also accuring in Raman.
+    :param spectra: (N, M) array of M spectra with N wavenumbers, no wavenumbers in array
+    :param seed: random seed to use
+    """
+    np.random.seed(seed)
+    newSpecs: np.ndarray = spectra.copy()
+    xaxis = np.arange(spectra.shape[0])
+    for i in range(spectra.shape[1]):
+        interf: np.ndarray = _generateSinDistortion(xaxis, (0.05, 0.1), numModes=(1, 1), left=False)
+        randLevel = 0.1 + np.random.rand() * 0.5
+        curSpec = newSpecs[:, i]
+        curSpec = (curSpec - curSpec.min()) / (curSpec.max() - curSpec.min())
+        newSpecs[:, i] = curSpec * (1 - randLevel) + randLevel * interf
+
+    return newSpecs
+
+
+def add_cosmic_ray_peaks(spectra: np.ndarray, numRange: Tuple[int, int], seed: int = 42) -> np.ndarray:
+    """
+    Adds a broad fluorescence_peak contribution, so that the fluoresence is stronger by a factor within the "levelRange" than
+    the original signal
+    :param spectra: (N, M) array, M spectra with N wavenumbers, no wavenumbers
+    :param numRange: (min, max) Number of cosmic ray peaks to add
+    :param seed: random seed to use
+    """
+    spectra = spectra.copy()
+    np.random.seed(seed)
+    halfPeakWidth: int = 2
+    maxHeightFactor: float = 1.0
+    specLength = spectra.shape[0]
+    for i in range(spectra.shape[1]):
+        numCC = np.random.randint(numRange[0], numRange[1])
+        curSpec = spectra[:, i]
+        for _ in range(numCC):
+            center = np.random.randint(halfPeakWidth, specLength-halfPeakWidth)
+            height = np.random.rand() * curSpec.max() * maxHeightFactor
+            startHeight, endHeight = curSpec[center-halfPeakWidth], curSpec[center] + height
+            curSpec[center-halfPeakWidth:center] += np.linspace(startHeight, endHeight, halfPeakWidth)
+            curSpec[center:center+halfPeakWidth] += np.linspace(endHeight, startHeight, halfPeakWidth)
+        spectra[:, i] = curSpec
+
+    return spectra
 
 def add_ghost_peaks(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.ndarray:
     spectra: np.ndarray = spectra.copy()
@@ -188,7 +291,7 @@ def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.nda
     return spectra
 
 
-def invsigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> np.ndarray:
+def _sigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> np.ndarray:
     """
     Calculates an inverted sigmoid function to the provided x-axis. It goes from 1.0 at lowest x-values to 0.0 at highest
     x-value.
@@ -209,6 +312,4 @@ def invsigmoid(xaxis: np.ndarray, steepness: float = 1, center: float = 0.5) -> 
     # Normalize the sigmoid
     sigm -= sigm.min()
     sigm /= sigm.max()
-
-    sigm = sigm[::-1]  # Invert the sigmoid
     return sigm
