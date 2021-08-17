@@ -1,7 +1,7 @@
 import random
-from typing import List, Dict, Tuple, TYPE_CHECKING
+from typing import List, Dict, Tuple, Union
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
+
 import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.decomposition import PCA
@@ -38,7 +38,7 @@ def getHistPlot(history: Dict[str, List], title: str = '', annotate: bool = True
 
 
 def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', recSpecs: 'EagerTensor',
-                          wavenumbers: np.ndarray, title: str = '', randomIndSeed: int = 42,
+                          wavenumbers: np.ndarray, title: str = '', randomIndSeed: Union[None, int] = 42,
                           includeSavGol: bool = True) -> Tuple[plt.Figure, plt.Figure]:
     """
     Used for creating an overview of the spectra reconstruction
@@ -48,7 +48,7 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
     :param wavenumbers: Wavenumbers to use for the plots
     :param title: Title to give the spectra overview
     :param randomIndSeed: if True, random spectra are used for plotting. If an integer is provided, it is used as
-                          seed for the random index selection. If False,
+                          seed for the random index selection. If None,
     :param includeSavGol:
     :return:
     """
