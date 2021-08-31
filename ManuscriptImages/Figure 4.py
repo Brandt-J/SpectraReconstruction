@@ -37,13 +37,13 @@ testSpectra: np.ndarray = specs[:, valIndices]
 t0 = time.time()
 numSpecsTotal = len(trainSpectra) + len(testSpectra)
 
-noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=0)
-noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=numSpecsTotal)
+noisyTrainSpectra = distort.add_noise(trainSpectra, level=noiseLevel, seed=0, ramanMode=True)
+noisyTestSpectra = distort.add_noise(testSpectra, level=noiseLevel, seed=numSpecsTotal, ramanMode=True)
 
 noisyTrainSpectra = distort.add_periodic_interferences_raman(noisyTrainSpectra, seed=0)
 noisyTestSpectra = distort.add_periodic_interferences_raman(noisyTestSpectra, seed=numSpecsTotal)
 
-levelRange = (1.0, 3.0)
+levelRange = (0.5, 1.5)
 noisyTrainSpectra = distort.add_fluorescence(noisyTrainSpectra, levelRange=levelRange, seed=0)
 noisyTestSpectra = distort.add_fluorescence(noisyTestSpectra, levelRange=levelRange, seed=numSpecsTotal)
 
@@ -72,7 +72,7 @@ t0 = time.time()
 reconstructedSpecs = rec.call(noisyTestSpectra)
 print(f'reconstruction took {round(time.time()-t0, 2)} seconds')
 
-histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
+# histplot = out.getHistPlot(history.history, title=experimentTitle, annotate=False)
 specPlot, boxPlot = out.getSpectraComparisons(testSpectra, noisyTestSpectra, reconstructedSpecs,
                                               includeSavGol=False,
                                               wavenumbers=wavenums,

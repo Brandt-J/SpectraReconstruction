@@ -208,7 +208,7 @@ def add_periodic_interferences_raman(spectra: np.ndarray, seed: int = 42) -> np.
     xaxis = np.arange(spectra.shape[0])
     for i in range(spectra.shape[1]):
         interf: np.ndarray = _generateSinDistortion(xaxis, (0.05, 0.1), numModes=(1, 1), left=False)
-        randLevel = 0.1 + np.random.rand() * 0.5
+        randLevel = 0.1 + np.random.rand() * 0.2
         curSpec = newSpecs[:, i]
         curSpec = (curSpec - curSpec.min()) / (curSpec.max() - curSpec.min())
         newSpecs[:, i] = curSpec * (1 - randLevel) + randLevel * interf
@@ -273,21 +273,30 @@ def add_ghost_peaks(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> 
     return spectra
 
 
-def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42) -> np.ndarray:
+def add_noise(spectra: np.ndarray, level: float = 0.1, seed: int = 42, ramanMode: bool = False) -> np.ndarray:
     """
     Adds random noise to the spectra..
     :param spectra: (N, M) array, M spectra with N wavenumbers, no wavenumbers included
     :param level: Level of noise
     :param seed: random seed
+    :param ramanMode: If True, the noise level increases towards higher wavenumbers, resembling typical behavior of
+    CCD Raman sensors.
     :return: new Spectra (N, M) array
     """
     np.random.seed(seed)
     spectra = spectra.copy()
     numWavenums: int = spectra.shape[0]
 
-    for i in range(spectra.shape[1]):
-        randomNoise = np.random.rand(numWavenums)
-        spectra[:, i] = (1-level)*spectra[:, i] + level*randomNoise
+    if ramanMode:
+        noiseLevelProfile: np.ndarray = np.linspace(level, 2*level, numWavenums)
+        signalLevelProfile: np.ndarray = 1 - noiseLevelProfile
+        for i in range(spectra.shape[1]):
+            randomNoise = np.random.rand(numWavenums)
+            spectra[:, i] = signalLevelProfile*spectra[:, i] + noiseLevelProfile*randomNoise
+    else:
+        for i in range(spectra.shape[1]):
+            randomNoise = np.random.rand(numWavenums)
+            spectra[:, i] = (1-level)*spectra[:, i] + level*randomNoise
     return spectra
 
 

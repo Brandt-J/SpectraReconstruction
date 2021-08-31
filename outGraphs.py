@@ -59,6 +59,7 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
 
     wavenumbers = np.linspace(wavenumbers[0], wavenumbers[-1], origSpecs.shape[1])
     plotIndices = []
+    savgolLength, savgolOrder = 15, 1
     corrs = np.zeros((len(recSpecs), 2))
     fig: plt.Figure = plt.figure(figsize=(14, 7))
     for step in ["step1", "step2"]:
@@ -81,7 +82,7 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
                 if np.isnan(corrNN):
                     corrNN = 0
                 corrs[i, 0] = corrNN
-                savgol = savgol_filter(noisy, window_length=21, polyorder=4)
+                savgol = savgol_filter(noisy, window_length=savgolLength, polyorder=savgolOrder)
                 corrSavGol = np.corrcoef(orig, savgol)[0, 1] * 100
                 corrs[i, 1] = corrSavGol
 
@@ -103,7 +104,7 @@ def getSpectraComparisons(origSpecs: 'EagerTensor', noisySpecs: 'EagerTensor', r
                     ax.plot(wavenumbers, orig - 1, color='orange')
                     ax.plot(wavenumbers, reconst - 2, color='green')
                     if includeSavGol:
-                        savgol = savgol_filter(noisy, window_length=21, polyorder=4)
+                        savgol = savgol_filter(noisy, window_length=savgolLength, polyorder=savgolOrder)
                         savgol -= savgol.min()
                         savgol /= savgol.max()
                         corrSavGol = corrs[i, 1]
