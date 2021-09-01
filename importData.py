@@ -63,7 +63,10 @@ def load_microFTIR_spectra(specLength: int, maxCorr: float = 1.0) -> Tuple[np.nd
 def load_reference_Raman_spectra() -> np.ndarray:
     specs = []
     file = h5py.File(r"RamanReferenceSpectra/Raman reference spectra.h5")
+    skipIndices: List[int] = [7, 16]  # indices of spectra that are not clean..
     for i, sample in enumerate(file['Samples'].keys()):
+        if i in skipIndices:
+            continue
         sample = file['Samples'][str(sample)]
         spec = sample['Spectra']
         data = spec[str(list(spec.keys())[0])]
